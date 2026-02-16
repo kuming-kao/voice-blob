@@ -70,6 +70,7 @@ export function VoiceReactiveBlob({ voiceData }: VoiceReactiveBlobProps) {
   const smoothedStrength = useRef(0);
   const localHit = useRef(new THREE.Vector3());
   const raycastFrame = useRef(0);
+  const mouseHovering = useRef(false);
 
   useFrame((_, delta) => {
     const u = material.uniforms;
@@ -130,30 +131,37 @@ export function VoiceReactiveBlob({ voiceData }: VoiceReactiveBlobProps) {
       meshRef.current.rotation.x += dt * 0.03 * speedMult;
     }
 
-    // --- Mouse interaction: raycast every 3rd frame for performance ---
+    // --- Mouse interaction ---
     const mu = material.mouseUniforms;
     raycastFrame.current++;
+
+    // Raycast every 3rd frame, track hover state
     if (meshRef.current && raycastFrame.current % 3 === 0) {
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObject(meshRef.current);
-
       if (hits.length > 0) {
-        // Convert world-space hit to object/local space
         localHit.current.copy(hits[0].point);
         meshRef.current.worldToLocal(localHit.current);
-
-        // Smooth the hit position so the push glides
-        smoothedHit.current.lerp(localHit.current, 0.12);
-        // Fade strength in
-        smoothedStrength.current += (0.4 - smoothedStrength.current) * 0.12;
+        mouseHovering.current = true;
       } else {
-        // Fade strength out when cursor leaves
-        smoothedStrength.current *= 0.92;
+        mouseHovering.current = false;
       }
-
-      mu.mouseHit.value.copy(smoothedHit.current);
-      mu.mouseStrength.value = smoothedStrength.current;
     }
+
+    // Smooth position + strength every frame for fluid motion
+    smoothedHit.current.lerp(localHit.current, 0.1);
+
+    if (mouseHovering.current) {
+      // Fade in
+      smoothedStrength.current += (0.4 - smoothedStrength.current) * 0.1;
+    } else {
+      // Very slow blobby settle — 0.98 per frame is ~3 seconds to fully fade
+      smoothedStrength.current *= 0.98;
+      if (smoothedStrength.current < 0.003) smoothedStrength.current = 0;
+    }
+
+    mu.mouseHit.value.copy(smoothedHit.current);
+    mu.mouseStrength.value = smoothedStrength.current;
 
     // Publish levels to DOM for DebugPanel (throttled to ~10fps)
     levelWriteCounter.current++;
